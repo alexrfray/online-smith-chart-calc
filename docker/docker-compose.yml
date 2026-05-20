@@ -2,7 +2,9 @@ version: "3.9"
 
 services:
   smith-chart:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     image: smith-chart-service:latest
     container_name: smith-chart-service
     ports:
