@@ -170,12 +170,13 @@ class TestAPI:
         assert isinstance(svg, str)
         assert svg.strip().startswith("<")  # SVG/XML starts with <
 
-    def test_chart_png_b64_decodeable(self):
-        r = client.post("/smith/move", json=self.VALID_PAYLOAD)
-        b64 = r.json()["chart_png_b64"]
-        assert isinstance(b64, str)
-        raw = base64.b64decode(b64)
-        assert raw[:8] == b"\x89PNG\r\n\x1a\n"  # PNG magic bytes
+    # ONLY SUPPORTING SVG NOW, PNG generation is fallback for rendering errors. So this test is not valid anymore.
+    # def test_chart_png_b64_decodeable(self):
+    #     r = client.post("/smith/move", json=self.VALID_PAYLOAD)
+    #     b64 = r.json()["chart_png_b64"]
+    #     assert isinstance(b64, str)
+    #     raw = base64.b64decode(b64)
+    #     assert raw[:8] == b"\x89PNG\r\n\x1a\n"  # PNG magic bytes
 
     def test_toward_load_direction(self):
         payload = {**self.VALID_PAYLOAD, "direction": "toward_load"}

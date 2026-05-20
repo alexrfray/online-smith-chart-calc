@@ -156,7 +156,7 @@ def _draw_direction_arrow(
     )
 
 
-def render_smith_move(rf_result: dict, req) -> dict:
+def render_smith_move(rf_result: dict, req, image_as_b64: bool = False) -> dict:
     """
     Render the Smith chart and return SVG string + PNG base64.
 
@@ -289,17 +289,20 @@ def render_smith_move(rf_result: dict, req) -> dict:
         svg_str = svg_buf.read().decode("utf-8")
     except Exception:
         svg_str = None
+        image_as_b64 = True  # Fallback to PNG if SVG fails
 
     # ── Render PNG (base64) ───────────────────────────────────────────────────
-    png_buf = io.BytesIO()
     png_b64: Optional[str] = None
-    try:
-        fig.savefig(png_buf, format="png", bbox_inches="tight",
-                    facecolor=PALETTE["bg"], dpi=DPI)
-        png_buf.seek(0)
-        png_b64 = base64.b64encode(png_buf.read()).decode("ascii")
-    except Exception:
-        png_b64 = None
+
+    if image_as_b64:
+        png_buf = io.BytesIO()
+        try:
+            fig.savefig(png_buf, format="png", bbox_inches="tight",
+                        facecolor=PALETTE["bg"], dpi=DPI)
+            png_buf.seek(0)
+            png_b64 = base64.b64encode(png_buf.read()).decode("ascii")
+        except Exception:
+            png_b64 = None
 
     plt.close(fig)
 
