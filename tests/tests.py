@@ -9,8 +9,8 @@ import math
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
-from app.rf_engine import compute_tl_move
+from api.main import app
+from smithChart.rf_engine import compute_tl_move
 
 client = TestClient(app)
 
