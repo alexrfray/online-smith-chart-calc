@@ -1,2 +1,11 @@
+# Images
 *.png
 *.svg
+
+# Byte-compiled / optimized / DLL files
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log

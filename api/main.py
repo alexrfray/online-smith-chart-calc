@@ -7,9 +7,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from ..models import SmithMoveRequest, SmithMoveResponse
-from ..smithChart.rf_engine import compute_tl_move
-from ..smithChart.smith_renderer import render_smith_move
+from smithChart.models import SmithMoveRequest, SmithMoveResponse
+from smithChart.rf_engine import compute_tl_move
+from smithChart.smith_renderer import render_smith_move
 
 app = FastAPI(
     title="Smith Chart Service",
