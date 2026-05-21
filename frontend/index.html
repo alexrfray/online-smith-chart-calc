@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RF Smith Chart Tool</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback, useRef } = React;
+
+const API_BASE = 'http://localhost:8000';  // same origin via ingress
+
+const NAV_ITEMS = [
+  {
+    section: 'Transmission Line',
+    items: [
+      { id: 'smith_move', label: 'TL Transform', icon: '◎', active: true },
+    ]
+  },
+  {
+    section: 'Lumped Elements',
+    items: [
+      { id: 'lumped_series', label: 'Series Element', icon: '⊕', disabled: true, badge: 'soon' },
+      { id: 'lumped_shunt', label: 'Shunt Element', icon: '⊙', disabled: true, badge: 'soon' },
+    ]
+  },
+  {
+    section: 'Matching Networks',
+    items: [
+      { id: 'l_network', label: 'L-Network', icon: '∟', disabled: true, badge: 'soon' },
+      { id: 'stub', label: 'Stub Matching', icon: '┤', disabled: true, badge: 'soon' },
+      { id: 'qwave', label: 'λ/4 Transformer', icon: '≡', disabled: true, badge: 'soon' },
+    ]
+  },
+];
+
+function fmtComplex(obj) {
+  if (!obj) return '—';
+  const r = obj.real ?? obj.r ?? 0;
+  const i = obj.imag ?? obj.i ?? 0;
+  const sign = i >= 0 ? '+' : '−';
+  return `${r.toFixed(3)} ${sign} j${Math.abs(i).toFixed(3)}`;
+}
+
+function fmtNum(v, digits = 4) {
+  if (v == null) return '—';
+  return Number(v).toFixed(digits);
+}
+
+function GammaBar({ val }) {
+  const pct = Math.min(100, (val || 0) * 100);
+  let color = '#00d4aa';
+  if (pct > 50) color = '#f59e0b';
+  if (pct > 80) color = '#ff4d6d';
+  return (
+    <div className="gamma-bar-wrap">
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontFamily: 'var(--mono)' }}>
+        <span style={{ color: 'var(--text3)' }}>|Γ|</span>
+        <span style={{ color }}>{fmtNum(val, 4)}</span>
+      </div>
+      <div className="gamma-bar-track">
+        <div className="gamma-bar-fill" style={{ width: `${pct}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
+
+function SmithMoveCalc() {
+  const [zl_r, setZlR] = useState('75');
+  const [zl_i, setZlI] = useState('25');
+  const [z0, setZ0] = useState('50');
+  const [length, setLength] = useState(0.2);
+  const [direction, setDirection] = useState('toward_generator');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  const compute = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const body = {
+        ZL: { real: parseFloat(zl_r), imag: parseFloat(zl_i) },
+        Z0: parseFloat(z0),
+        length_lambda: length,
+        direction,
+      };
+      const res = await fetch(`${API_BASE}/smith/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail?.[0]?.msg || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setResult(data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [zl_r, zl_i, z0, length, direction]);
+
+  const vswr = result?.VSWR;
+  const vswrClass = !vswr ? '' : vswr < 1.5 ? 'good' : vswr < 3 ? 'mid' : 'bad';
+  const rl = result?.return_loss_dB;
+  const rlClass = !rl ? '' : rl > 20 ? 'good' : rl > 10 ? 'mid' : 'bad';
+
+  return (
+    <>
+      <div className="panel-card">
+        <div className="input-grid">
+          {/* ZL */}
+          <div className="field-group" style={{ gridColumn: '1 / -1' }}>
+            <span className="field-label">Load Impedance <span>Z</span><sub style={{fontSize:9}}>L</sub></span>
+            <div className="field-row">
+              <input className="field-input" type="number" value={zl_r}
+                onChange={e => setZlR(e.target.value)} placeholder="75" />
+              <div className="field-unit">+ j</div>
+              <input className="field-input" type="number" value={zl_i}
+                onChange={e => setZlI(e.target.value)} placeholder="25" />
+              <div className="field-unit">Ω</div>
+            </div>
+          </div>
+
+          {/* Z0 */}
+          <div className="field-group">
+            <span className="field-label">Char. Impedance <span>Z</span><sub style={{fontSize:9}}>0</sub></span>
+            <div className="field-row">
+              <input className="field-input" type="number" value={z0}
+                onChange={e => setZ0(e.target.value)} placeholder="50" />
+              <div className="field-unit">Ω</div>
+            </div>
+          </div>
+
+          {/* Direction */}
+          <div className="field-group">
+            <span className="field-label">Direction</span>
+            <div className="toggle-group">
+              <button
+                className={`toggle-btn ${direction === 'toward_generator' ? 'active' : ''}`}
+                onClick={() => setDirection('toward_generator')}
+              >→ GEN</button>
+              <button
+                className={`toggle-btn ${direction === 'toward_load' ? 'active' : ''}`}
+                onClick={() => setDirection('toward_load')}
+              >→ LOAD</button>
+            </div>
+          </div>
+
+          {/* Length */}
+          <div className="field-group" style={{ gridColumn: '1 / -1' }}>
+            <div className="slider-header">
+              <span className="field-label">Line Length</span>
+              <span className="slider-val">{length.toFixed(3)} λ</span>
+            </div>
+            <div className="slider-wrap">
+              <input type="range" min="0" max="0.5" step="0.001" value={length}
+                onChange={e => setLength(parseFloat(e.target.value))} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
+                <span>0λ</span><span>0.125λ</span><span>0.25λ</span><span>0.375λ</span><span>0.5λ</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <button
+            className={`submit-btn${loading ? ' loading' : ''}`}
+            onClick={compute}
+            disabled={loading}
+          >
+            {loading ? 'COMPUTING...' : 'COMPUTE'}
+          </button>
+        </div>
+
+        {error && <div className="error-banner" style={{ marginTop: 10 }}>{error}</div>}
+      </div>
+
+      {/* Chart */}
+      <div className="chart-panel">
+        {result?.chart_svg ? (
+          <div
+            style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            dangerouslySetInnerHTML={{ __html: result.chart_svg }}
+          />
+        ) : (
+          <div className="chart-empty">
+            <div className="chart-empty-icon">◎</div>
+            <p>SMITH CHART</p>
+            <p style={{ fontSize: 11, marginTop: 4 }}>Enter parameters and compute</p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ResultsPanel({ result }) {
+  if (!result) {
+    return (
+      <div className="results-panel">
+        <p className="placeholder-msg">Results will appear<br />after computation</p>
+      </div>
+    );
+  }
+
+  const vswr = result.VSWR;
+  const vswrClass = vswr < 1.5 ? 'good' : vswr < 3 ? 'mid' : 'bad';
+  const rl = result.return_loss_dB;
+  const rlClass = rl > 20 ? 'good' : rl > 10 ? 'mid' : 'bad';
+
+  return (
+    <div className="results-panel">
+      <div>
+        <div className="results-section-title">Key Metrics</div>
+        <div className="metric-cards">
+          <div className="metric-card">
+            <div className="metric-card-label">VSWR</div>
+            <div className={`metric-card-val ${vswrClass}`}>{fmtNum(vswr, 3)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-card-label">Return Loss</div>
+            <div className={`metric-card-val ${rlClass}`}>{fmtNum(rl, 2)} dB</div>
+          </div>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <GammaBar val={result.gamma_magnitude} />
+        </div>
+      </div>
+
+      <div>
+        <div className="results-section-title">Input Impedance Z<sub>in</sub></div>
+        <div className="result-row">
+          <span className="result-key">Real</span>
+          <span className="result-val highlight">{fmtNum(result.Zin?.real, 4)} Ω</span>
+        </div>
+        <div className="result-row">
+          <span className="result-key">Imag</span>
+          <span className="result-val highlight">{fmtNum(result.Zin?.imag, 4)} Ω</span>
+        </div>
+        <div className="result-row">
+          <span className="result-key">Complex</span>
+          <span className="result-val" style={{ fontSize: 11 }}>{fmtComplex(result.Zin)}</span>
+        </div>
+      </div>
+
+      <div>
+        <div className="results-section-title">Reflection Coefficients</div>
+        <div className="result-row">
+          <span className="result-key">Γ<sub>L</sub> real</span>
+          <span className="result-val">{fmtNum(result.gamma_L?.real, 5)}</span>
+        </div>
+        <div className="result-row">
+          <span className="result-key">Γ<sub>L</sub> imag</span>
+          <span className="result-val">{fmtNum(result.gamma_L?.imag, 5)}</span>
+        </div>
+        <div className="result-row">
+          <span className="result-key">Γ<sub>in</sub> real</span>
+          <span className="result-val">{fmtNum(result.gamma_in?.real, 5)}</span>
+        </div>
+        <div className="result-row">
+          <span className="result-key">Γ<sub>in</sub> imag</span>
+          <span className="result-val">{fmtNum(result.gamma_in?.imag, 5)}</span>
+        </div>
+        <div className="result-row">
+          <span className="result-key">|Γ|</span>
+          <span className="result-val">{fmtNum(result.gamma_magnitude, 6)}</span>
+        </div>
+      </div>
+
+      <div>
+        <div className="results-section-title">Transform</div>
+        <div className="result-row">
+          <span className="result-key">Rotation</span>
+          <span className="result-val">{fmtNum(result.rotation_deg, 2)}°</span>
+        </div>
+        <div className="result-row">
+          <span className="result-key">Length</span>
+          <span className="result-val">{fmtNum(result.length_lambda, 4)} λ</span>
+        </div>
+        <div className="result-row">
+          <span className="result-key">Direction</span>
+          <span className="result-val" style={{ fontSize: 11, color: 'var(--text2)' }}>
+            {result.direction === 'toward_generator' ? '→ generator' : '→ load'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [activeCalc, setActiveCalc] = useState('smith_move');
+  const [result, setResult] = useState(null);
+
+  // We lift result state so ResultsPanel can update from SmithMoveCalc
+  // Instead: pass setResult down and read result in App
+  const [sharedResult, setSharedResult] = useState(null);
+
+  return (
+    <div className="app">
+      <header className="header">
+        <div className="header-logo">RF SMITH</div>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)', marginLeft: 4 }}>
+          / visualization tool
+        </span>
+        <div className="header-divider" />
+        <span className="header-meta">v1.0 · lossless TL · stateless</span>
+      </header>
+
+      <nav className="sidebar">
+        {NAV_ITEMS.map(section => (
+          <div key={section.section}>
+            <div className="sidebar-section">{section.section}</div>
+            {section.items.map(item => (
+              <button
+                key={item.id}
+                className={`nav-item${item.id === activeCalc ? ' active' : ''}${item.disabled ? ' disabled' : ''}`}
+                onClick={() => !item.disabled && setActiveCalc(item.id)}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                {item.label}
+                {item.badge && (
+                  <span className={`nav-badge${item.badge === 'new' ? ' new' : ''}`}>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      <main className="main">
+        <div className="calculator-area">
+          {activeCalc === 'smith_move' ? (
+            <SmithMoveCalcWrapper onResult={setSharedResult} />
+          ) : (
+            <div className="coming-soon">
+              <span className="badge-coming">COMING SOON</span>
+              <div className="coming-soon-title">Not yet implemented</div>
+              <p>This calculator endpoint is in development. Check back when the backend API is ready.</p>
+            </div>
+          )}
+        </div>
+      </main>
+
+      <aside>
+        <ResultsPanel result={sharedResult} />
+      </aside>
+    </div>
+  );
+}
+
+// Wrapper to lift result state to App
+function SmithMoveCalcWrapper({ onResult }) {
+  const [zl_r, setZlR] = useState('75');
+  const [zl_i, setZlI] = useState('25');
+  const [z0, setZ0] = useState('50');
+  const [length, setLength] = useState(0.2);
+  const [direction, setDirection] = useState('toward_generator');
+  const [loading, setLoading] = useState(false);
+  const [chartSvg, setChartSvg] = useState(null);
+  const [error, setError] = useState(null);
+
+  const compute = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const body = {
+        ZL: { real: parseFloat(zl_r), imag: parseFloat(zl_i) },
+        Z0: parseFloat(z0),
+        length_lambda: length,
+        direction,
+      };
+      const res = await fetch(`${API_BASE}/smith/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const detail = err?.detail;
+        if (Array.isArray(detail)) throw new Error(detail.map(d => d.msg).join('; '));
+        throw new Error(String(detail || `HTTP ${res.status}`));
+      }
+      const data = await res.json();
+      setChartSvg(data.chart_svg || null);
+      onResult(data);
+    } catch (e) {
+      setError(e.message);
+      onResult(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [zl_r, zl_i, z0, length, direction, onResult]);
+
+  return (
+    <>
+      <div className="panel-card">
+        <div className="input-grid">
+          <div className="field-group" style={{ gridColumn: '1 / -1' }}>
+            <span className="field-label">
+              Load Impedance &nbsp;<span style={{fontStyle:'italic',fontFamily:'Georgia,serif'}}>Z</span><sub style={{fontSize:9}}>L</sub>
+            </span>
+            <div className="field-row">
+              <input className="field-input" type="number" value={zl_r}
+                onChange={e => setZlR(e.target.value)} placeholder="75" />
+              <div className="field-unit">+ j</div>
+              <input className="field-input" type="number" value={zl_i}
+                onChange={e => setZlI(e.target.value)} placeholder="25" />
+              <div className="field-unit">Ω</div>
+            </div>
+          </div>
+
+          <div className="field-group">
+            <span className="field-label">
+              Char. Impedance &nbsp;<span style={{fontStyle:'italic',fontFamily:'Georgia,serif'}}>Z</span><sub style={{fontSize:9}}>0</sub>
+            </span>
+            <div className="field-row">
+              <input className="field-input" type="number" value={z0}
+                onChange={e => setZ0(e.target.value)} placeholder="50" />
+              <div className="field-unit">Ω</div>
+            </div>
+          </div>
+
+          <div className="field-group">
+            <span className="field-label">Direction</span>
+            <div className="toggle-group">
+              <button
+                className={`toggle-btn${direction === 'toward_generator' ? ' active' : ''}`}
+                onClick={() => setDirection('toward_generator')}
+              >→ GEN</button>
+              <button
+                className={`toggle-btn${direction === 'toward_load' ? ' active' : ''}`}
+                onClick={() => setDirection('toward_load')}
+              >→ LOAD</button>
+            </div>
+          </div>
+
+          <div className="field-group" style={{ gridColumn: '1 / -1' }}>
+            <div className="slider-header">
+              <span className="field-label">
+                Line Length &nbsp;<span style={{fontStyle:'italic',fontFamily:'Georgia,serif'}}>ℓ</span>
+              </span>
+              <span className="slider-val">{length.toFixed(3)} λ</span>
+            </div>
+            <div className="slider-wrap">
+              <input type="range" min="0" max="0.5" step="0.001" value={length}
+                onChange={e => setLength(parseFloat(e.target.value))} />
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, fontFamily:'var(--mono)', color:'var(--text3)', marginTop:4 }}>
+                <span>0λ</span><span>⅛λ</span><span>¼λ</span><span>⅜λ</span><span>½λ</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <button
+            className={`submit-btn${loading ? ' loading' : ''}`}
+            onClick={compute}
+            disabled={loading}
+          >
+            {loading ? 'COMPUTING…' : 'COMPUTE'}
+          </button>
+        </div>
+
+        {error && <div className="error-banner" style={{ marginTop: 10 }}>⚠ {error}</div>}
+      </div>
+
+      <div className="chart-panel">
+        {chartSvg ? (
+          <div
+            style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', padding: 8 }}
+            dangerouslySetInnerHTML={{ __html: chartSvg }}
+          />
+        ) : (
+          <div className="chart-empty">
+            <div className="chart-empty-icon">◎</div>
+            <p>SMITH CHART</p>
+            <p style={{ fontSize:11, marginTop:4, fontFamily:'var(--sans)', letterSpacing:0 }}>Enter parameters and press Compute</p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
